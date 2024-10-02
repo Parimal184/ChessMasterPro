@@ -1,0 +1,67 @@
+.chessboard {
+    display: flex;
+    flex-direction: column;
+    margin: auto;
+  }
+  
+  .chessboard-row {
+    display: flex;
+    flex-direction: row;
+  }
+  
+  .chessboard-square {
+    width: 60px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2em;
+    cursor: default;
+    &.white {
+        background-color: #f0d9b5;
+    }
+    &.black {
+        background-color: #b58863;
+    }
+  }
+  
+  .light-square {
+    background-color: #ebecd0; /* Light color */
+  }
+  
+  .dark-square {
+    background-color: #739552; /* Dark color */
+  }
+
+  .selected {
+    background-color: #f8f888 !important;
+  }
+  
+  .chess-piece {
+    font-size: 24px;
+    width: 100%; // Adjust as needed
+    height: auto;
+  }
+  
+  .chessboard-label {
+    width: 50px;
+    height: 50px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-weight: bold;
+    color: #333;
+  }
+  
+  .empty-corner {
+    width: 50px;
+    height: 50px;
+  }
+  .valid-drop {
+    background-color: rgba(0, 255, 0, 0.5); // Example color for valid drop zones
+  }
+
+  .chess-piece:hover {
+    cursor: grab; // Change cursor to grab when hovering over a piece
+  }
+  

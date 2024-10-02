@@ -1,0 +1,9 @@
+.valid-move-marker {
+    position: absolute;
+    width: 20px;  // Adjust size as needed
+    height: 20px; // Adjust size as needed
+    background-color: rgba(0, 255, 0, 0.7); // Change color as needed
+    border-radius: 50%; // Circle shape
+    transform: translate(-50%, -50%); // Center the marker
+  }
+  
