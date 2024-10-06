@@ -40,6 +40,11 @@ const ChessBoard: React.FC = () => {
         row: number;
         col: number;
     } | null>(null);
+
+    const [lastMovedFrom, setLastMovedFrom] = useState<{ row: number; col: number } | null>(null);
+    const [lastMovedTo, setLastMovedTo] = useState<{ row: number; col: number } | null>(null);
+
+
     const [moveHistory, setMoveHistory] = useState<string[]>([]); // State to track move history
     const [validMoves, setValidMoves] = useState<
         { row: number; col: number }[]
@@ -215,6 +220,10 @@ const ChessBoard: React.FC = () => {
     
             const move = `${movedPiece} moved from ${columnLabels[startCol]}${8 - startRow} to ${columnLabels[endCol]}${8 - endRow}`;
             setMoveHistory([...moveHistory, move]);
+
+            // Set the last moved positions for highlighting
+            setLastMovedFrom({ row: startRow, col: startCol });
+            setLastMovedTo({ row: endRow, col: endCol });
     
             setIsWhiteTurn(!isWhiteTurn);
             setSelectedPiece(null);
@@ -395,17 +404,53 @@ const ChessBoard: React.FC = () => {
     };
 
     const handlePromotion = (piece: string) => {
+        debugger
         if (promotedPawnPosition) {
             const { row, col } = promotedPawnPosition;
             const newBoard = [...board];
-            newBoard[row][col] = piece.toUpperCase();
+            newBoard[row][col] = piece;
             setBoard(newBoard);
 
             setIsPromoting(false);
             setPromotedPawnPosition(null);
             setIsWhiteTurn(!isWhiteTurn); // Switch turn after promotion
+            setSelectedPiece(null);
+            setValidMoves([]); // Clear valid moves
         }
     };
+
+    const renderSquare = (row: number, col: number) => {
+        const piece = board[row][col];
+    
+        // Determine if the square should be highlighted
+        const isHighlightFrom = lastMovedFrom && lastMovedFrom.row === row && lastMovedFrom.col === col;
+        const isHighlightTo = lastMovedTo && lastMovedTo.row === row && lastMovedTo.col === col;
+    
+        return (
+            <div
+                className={`square ${isHighlightFrom || isHighlightTo ? 'highlight' : ''}`}
+                onClick={() => handleSquareClick(row, col)}
+                onDragOver={handleDragOver}
+                onDrop={() => handleDrop(row, col)}
+            >
+                {renderPiece(piece, row, col)}
+                {validMoves.some(
+                                (move) =>
+                                    move.row === row &&
+                                    move.col === col
+                            ) && (
+                                <div
+                                    className="valid-move-marker"
+                                    style={{
+                                        gridRow: row + 1,
+                                        gridColumn: col + 1,
+                                    }}
+                                />
+                            )}
+            </div>
+        );
+    };
+    
 
     return (
         <div className="chess-container">
@@ -421,40 +466,41 @@ const ChessBoard: React.FC = () => {
             <div className="chessboard">
                 {board.map((rowArray, rowIndex) =>
                     rowArray.map((piece, colIndex) => (
-                        <div
-                            key={`${rowIndex}-${colIndex}`}
-                            className="square"
-                            onClick={() =>
-                                handleSquareClick(rowIndex, colIndex)
-                            }
-                            onDragOver={handleDragOver}
-                            onDrop={() => handleDrop(rowIndex, colIndex)} 
-                        >
-                            {renderPiece(piece, rowIndex, colIndex)}
-                            {validMoves.some(
-                                (move) =>
-                                    move.row === rowIndex &&
-                                    move.col === colIndex
-                            ) && (
-                                <div
-                                    className="valid-move-marker"
-                                    style={{
-                                        gridRow: rowIndex + 1,
-                                        gridColumn: colIndex + 1,
-                                    }}
-                                />
-                            )}
-                        </div>
+                        // <div
+                        //     key={`${rowIndex}-${colIndex}`}
+                        //     className="square"
+                        //     onClick={() =>
+                        //         handleSquareClick(rowIndex, colIndex)
+                        //     }
+                        //     onDragOver={handleDragOver}
+                        //     onDrop={() => handleDrop(rowIndex, colIndex)} 
+                        // >
+                        //     {renderPiece(piece, rowIndex, colIndex)}
+                        //     {validMoves.some(
+                        //         (move) =>
+                        //             move.row === rowIndex &&
+                        //             move.col === colIndex
+                        //     ) && (
+                        //         <div
+                        //             className="valid-move-marker"
+                        //             style={{
+                        //                 gridRow: rowIndex + 1,
+                        //                 gridColumn: colIndex + 1,
+                        //             }}
+                        //         />
+                        //     )}
+                        // </div>
+                        renderSquare(rowIndex, colIndex)
                     ))
                 )}
             </div>
                 {isPromoting && (
                     <div className="promotion-modal">
                         <h3>Promote your Pawn</h3>
-                        <button onClick={() => handlePromotion('Q')}>Queen</button>
-                        <button onClick={() => handlePromotion('R')}>Rook</button>
-                        <button onClick={() => handlePromotion('B')}>Bishop</button>
-                        <button onClick={() => handlePromotion('N')}>Knight</button>
+                        <button onClick={() => handlePromotion(isWhiteTurn ? 'Q' : 'q')}>Queen</button>
+                        <button onClick={() => handlePromotion(isWhiteTurn ? 'R' : 'r')}>Rook</button>
+                        <button onClick={() => handlePromotion(isWhiteTurn ? 'B' : 'b')}>Bishop</button>
+                        <button onClick={() => handlePromotion(isWhiteTurn ? 'N' : 'n')}>Knight</button>
                     </div>
                 )}
 
