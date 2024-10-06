@@ -52,23 +52,31 @@ const ChessBoard: React.FC = () => {
     // Track which player's turn it is (white starts)
     const [isWhiteTurn, setIsWhiteTurn] = useState(true);
 
+    const [isPromoting, setIsPromoting] = useState(false);
+    const [promotedPawnPosition, setPromotedPawnPosition] = useState<{ row: number; col: number } | null>(null);
+
+
      // Add drag handlers to pieces
      const handleDragStart = async (row: number, col: number, e: React.DragEvent<HTMLImageElement>, piece: string) => {
-      handleSquareClick(row, col);
-      // e.currentTarget.classList.add('dragging'); // Add dragging class on drag start  
-    //   console.log(e.currentTarget);
-    //   e.dataTransfer.setDragImage(e.currentTarget, 0, 0);
-      setSelectedPiece({ row, col });
+        if (!isPieceColor(piece, isWhiteTurn)) {
+            e.preventDefault(); // Prevent dragging if it's not the player's turn
+            return; // Exit early
+        }
+        handleSquareClick(row, col);
+        e.currentTarget.classList.add('dragging'); // Add dragging class on drag start  
+    
+        setSelectedPiece({ row, col });
     };
   
     const handleDrop = (row: number, col: number) => {
-      if (selectedPiece) {
-        if (isValidMove(selectedPiece.row, selectedPiece.col, row, col)) {
-          movePiece(selectedPiece.row, selectedPiece.col, row, col);
+        if (selectedPiece) {
+          if (isValidMove(selectedPiece.row, selectedPiece.col, row, col)) {
+            movePiece(selectedPiece.row, selectedPiece.col, row, col);
+          } 
+          setSelectedPiece(null);
+          setValidMoves([]); // Clear valid moves
         }
-        setSelectedPiece(null);
-      }
-    };
+      };
   
     const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
       e.preventDefault(); // Prevent default to allow drop
@@ -111,22 +119,33 @@ const ChessBoard: React.FC = () => {
         return () => clearInterval(interval);
     }, [isWhiteTurn]);
 
+
     const handleSquareClick = (row: number, col: number) => {
         const piece = board[row][col];
-
+    
+        // If a piece is selected and a valid move is clicked
         if (selectedPiece) {
-            if (isValidMove(selectedPiece.row, selectedPiece.col, row, col)) {
+            if (validMoves.some(move => move.row === row && move.col === col)) {
+                // Move the piece from the selected position to the new position
                 movePiece(selectedPiece.row, selectedPiece.col, row, col);
+            } else if (piece && isPieceColor(piece, isWhiteTurn)) {
+                // If the clicked piece is of the same color, switch selection
+                setSelectedPiece({ row, col });
+                setValidMoves(getValidMoves(row, col)); // Get valid moves for the newly selected piece
+            } else {
+                // Deselect if not a valid move and not the same color
+                setSelectedPiece(null);
+                setValidMoves([]); // Clear valid moves
             }
-            setSelectedPiece(null); // Deselect regardless of move validity
-            setValidMoves([]); // Clear valid moves
         } else {
+            // If no piece is selected and clicked piece is valid
             if (piece && isPieceColor(piece, isWhiteTurn)) {
                 setSelectedPiece({ row, col });
                 setValidMoves(getValidMoves(row, col)); // Get valid moves for selected piece
             }
         }
     };
+    
 
     // Get valid moves based on the selected piece
     const getValidMoves = (row: number, col: number) => {
@@ -143,6 +162,37 @@ const ChessBoard: React.FC = () => {
         return moves;
     };
 
+    // const movePiece = (
+    //     startRow: number,
+    //     startCol: number,
+    //     endRow: number,
+    //     endCol: number
+    // ) => {
+    //     const newBoard = [...board];
+    //     const movedPiece = newBoard[startRow][startCol];
+
+    //     if (movedPiece.toLowerCase() === 'p' && (endRow === 0 || endRow === 7)) {
+    //         setIsPromoting(true);
+    //         setPromotedPawnPosition({ row: endRow, col: endCol });
+    //         return; // Exit to wait for promotion selection
+    //     }
+
+    //     newBoard[endRow][endCol] = movedPiece;
+    //     newBoard[startRow][startCol] = "";
+    //     setBoard(newBoard);
+
+    //     const move = `${movedPiece} moved from ${columnLabels[startCol]}${
+    //         8 - startRow
+    //     } to ${columnLabels[endCol]}${8 - endRow}`;
+    //     setMoveHistory([...moveHistory, move]);
+
+    //     setIsWhiteTurn(!isWhiteTurn);
+    //     setSelectedPiece(null);
+    //     setValidMoves([]); // Clear valid moves
+    // };
+
+    // Helper function to check if the piece color matches the current player
+    
     const movePiece = (
         startRow: number,
         startCol: number,
@@ -151,21 +201,27 @@ const ChessBoard: React.FC = () => {
     ) => {
         const newBoard = [...board];
         const movedPiece = newBoard[startRow][startCol];
+    
+        // Move the piece normally
         newBoard[endRow][endCol] = movedPiece;
         newBoard[startRow][startCol] = "";
-        setBoard(newBoard);
-
-        const move = `${movedPiece} moved from ${columnLabels[startCol]}${
-            8 - startRow
-        } to ${columnLabels[endCol]}${8 - endRow}`;
-        setMoveHistory([...moveHistory, move]);
-
-        setIsWhiteTurn(!isWhiteTurn);
-        setSelectedPiece(null);
-        setValidMoves([]); // Clear valid moves
+    
+        // Check for pawn promotion after moving
+        if (movedPiece.toLowerCase() === 'p' && (endRow === 0 || endRow === 7)) {
+            setIsPromoting(true);
+            setPromotedPawnPosition({ row: endRow, col: endCol });
+        } else {
+            setBoard(newBoard);
+    
+            const move = `${movedPiece} moved from ${columnLabels[startCol]}${8 - startRow} to ${columnLabels[endCol]}${8 - endRow}`;
+            setMoveHistory([...moveHistory, move]);
+    
+            setIsWhiteTurn(!isWhiteTurn);
+            setSelectedPiece(null);
+            setValidMoves([]); // Clear valid moves
+        }
     };
-
-    // Helper function to check if the piece color matches the current player
+    
     const isPieceColor = (piece: string, isWhiteTurn: boolean) => {
         return (
             (isWhiteTurn && piece === piece.toUpperCase()) ||
@@ -338,6 +394,19 @@ const ChessBoard: React.FC = () => {
         return `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`;
     };
 
+    const handlePromotion = (piece: string) => {
+        if (promotedPawnPosition) {
+            const { row, col } = promotedPawnPosition;
+            const newBoard = [...board];
+            newBoard[row][col] = piece.toUpperCase();
+            setBoard(newBoard);
+
+            setIsPromoting(false);
+            setPromotedPawnPosition(null);
+            setIsWhiteTurn(!isWhiteTurn); // Switch turn after promotion
+        }
+    };
+
     return (
         <div className="chess-container">
             <div className="timers">
@@ -379,6 +448,15 @@ const ChessBoard: React.FC = () => {
                     ))
                 )}
             </div>
+                {isPromoting && (
+                    <div className="promotion-modal">
+                        <h3>Promote your Pawn</h3>
+                        <button onClick={() => handlePromotion('Q')}>Queen</button>
+                        <button onClick={() => handlePromotion('R')}>Rook</button>
+                        <button onClick={() => handlePromotion('B')}>Bishop</button>
+                        <button onClick={() => handlePromotion('N')}>Knight</button>
+                    </div>
+                )}
 
             <div className="move-history">
                 <h3>Move History</h3>
