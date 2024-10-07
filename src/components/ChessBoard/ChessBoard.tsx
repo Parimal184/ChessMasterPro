@@ -1,38 +1,11 @@
 import React, { useState, useEffect } from "react";
 import "../../styles/ChessBoard.scss";
-
-const pieceImages = {
-    P: "/assets/pieces/wp.png", // White Pawn
-    R: "/assets/pieces/wr.png", // White Rook
-    N: "/assets/pieces/wn.png", // White Knight
-    B: "/assets/pieces/wb.png", // White Bishop
-    Q: "/assets/pieces/wq.png", // White Queen
-    K: "/assets/pieces/wk.png", // White King
-    p: "/assets/pieces/bp.png", // Black Pawn
-    r: "/assets/pieces/br.png", // Black Rook
-    n: "/assets/pieces/bn.png", // Black Knight
-    b: "/assets/pieces/bb.png", // Black Bishop
-    q: "/assets/pieces/bq.png", // Black Queen
-    k: "/assets/pieces/bk.png", // Black King
-};
-
-const initialBoard = [
-    ["r", "n", "b", "q", "k", "b", "n", "r"],
-    ["p", "p", "p", "p", "p", "p", "p", "p"],
-    ["", "", "", "", "", "", "", ""],
-    ["", "", "", "", "", "", "", ""],
-    ["", "", "", "", "", "", "", ""],
-    ["", "", "", "", "", "", "", ""],
-    ["P", "P", "P", "P", "P", "P", "P", "P"],
-    ["R", "N", "B", "Q", "K", "B", "N", "R"],
-];
+import { INITIAL_TIMER, initialBoard, pieceImages } from "../../constants/BoardConfig";
 
 // Column and Row labels
 const columnLabels = ["a", "b", "c", "d", "e", "f", "g", "h"];
 const rowLabels = [8, 7, 6, 5, 4, 3, 2, 1];
-
-// Constants for the initial timer values (in seconds)
-const INITIAL_TIMER = 300; // 5 minutes per player
+const promotionPieces = ["q", "r", "b", "n"];
 
 const ChessBoard: React.FC = () => {
     const [board, setBoard] = useState(initialBoard);
@@ -59,6 +32,8 @@ const ChessBoard: React.FC = () => {
 
     const [isPromoting, setIsPromoting] = useState(false);
     const [promotedPawnPosition, setPromotedPawnPosition] = useState<{ row: number; col: number } | null>(null);
+    const [popupStyle, setPopupStyle] = useState<React.CSSProperties | null>(null);
+
 
 
      // Add drag handlers to pieces
@@ -67,7 +42,7 @@ const ChessBoard: React.FC = () => {
             e.preventDefault(); // Prevent dragging if it's not the player's turn
             return; // Exit early
         }
-        handleSquareClick(row, col);
+        handleSquareClick(row, col, e.currentTarget);
         e.currentTarget.classList.add('dragging'); // Add dragging class on drag start  
     
         setSelectedPiece({ row, col });
@@ -95,11 +70,13 @@ const ChessBoard: React.FC = () => {
       if (!piece) return null;
       const pieceImageSrc = pieceImages[piece as keyof typeof pieceImages];
   
+      const pieceClass = selectedPiece?.row === row && selectedPiece?.col === col ? "piece selected" : "piece";
+
       return (
         <img
           src={pieceImageSrc}
           alt={piece}
-          className="piece"
+          className={pieceClass}
           draggable
           onDragStart={(e) => handleDragStart(row, col, e, piece)}
           onDragOver={handleDragOver}
@@ -109,9 +86,17 @@ const ChessBoard: React.FC = () => {
       );
     };
   
-
-
-
+     // Calculate the position for the promotion popup based on the pawn's row and column
+  const getPromotionPopupStyle = () => {
+    if (!promotedPawnPosition) return {};
+    const { row, col } = promotedPawnPosition;
+    const top = row * 100; // Assuming each square is 100px high
+    const left = col * 100; // Assuming each square is 100px wide
+    return {
+      top: `${top}px`,
+      left: `${left}px`,
+    };
+  };
     useEffect(() => {
         const interval = setInterval(() => {
             if (isWhiteTurn) {
@@ -125,8 +110,14 @@ const ChessBoard: React.FC = () => {
     }, [isWhiteTurn]);
 
 
-    const handleSquareClick = (row: number, col: number) => {
+    const handleSquareClick = (row: number, col: number, squareElement: HTMLDivElement) => {
         const piece = board[row][col];
+        debugger
+        const rect = squareElement.getBoundingClientRect();
+            setPopupStyle({
+                top: `${rect.top - rect.height}px`, // Adjust top to be exactly above the square
+                left: `${rect.left - rect.width}px`, // Align left with the square's left
+            });
     
         // If a piece is selected and a valid move is clicked
         if (selectedPiece) {
@@ -166,37 +157,6 @@ const ChessBoard: React.FC = () => {
         }
         return moves;
     };
-
-    // const movePiece = (
-    //     startRow: number,
-    //     startCol: number,
-    //     endRow: number,
-    //     endCol: number
-    // ) => {
-    //     const newBoard = [...board];
-    //     const movedPiece = newBoard[startRow][startCol];
-
-    //     if (movedPiece.toLowerCase() === 'p' && (endRow === 0 || endRow === 7)) {
-    //         setIsPromoting(true);
-    //         setPromotedPawnPosition({ row: endRow, col: endCol });
-    //         return; // Exit to wait for promotion selection
-    //     }
-
-    //     newBoard[endRow][endCol] = movedPiece;
-    //     newBoard[startRow][startCol] = "";
-    //     setBoard(newBoard);
-
-    //     const move = `${movedPiece} moved from ${columnLabels[startCol]}${
-    //         8 - startRow
-    //     } to ${columnLabels[endCol]}${8 - endRow}`;
-    //     setMoveHistory([...moveHistory, move]);
-
-    //     setIsWhiteTurn(!isWhiteTurn);
-    //     setSelectedPiece(null);
-    //     setValidMoves([]); // Clear valid moves
-    // };
-
-    // Helper function to check if the piece color matches the current player
     
     const movePiece = (
         startRow: number,
@@ -404,7 +364,6 @@ const ChessBoard: React.FC = () => {
     };
 
     const handlePromotion = (piece: string) => {
-        debugger
         if (promotedPawnPosition) {
             const { row, col } = promotedPawnPosition;
             const newBoard = [...board];
@@ -429,7 +388,7 @@ const ChessBoard: React.FC = () => {
         return (
             <div
                 className={`square ${isHighlightFrom || isHighlightTo ? 'highlight' : ''}`}
-                onClick={() => handleSquareClick(row, col)}
+                onClick={(e) => handleSquareClick(row, col, e.currentTarget)}
                 onDragOver={handleDragOver}
                 onDrop={() => handleDrop(row, col)}
             >
@@ -466,43 +425,25 @@ const ChessBoard: React.FC = () => {
             <div className="chessboard">
                 {board.map((rowArray, rowIndex) =>
                     rowArray.map((piece, colIndex) => (
-                        // <div
-                        //     key={`${rowIndex}-${colIndex}`}
-                        //     className="square"
-                        //     onClick={() =>
-                        //         handleSquareClick(rowIndex, colIndex)
-                        //     }
-                        //     onDragOver={handleDragOver}
-                        //     onDrop={() => handleDrop(rowIndex, colIndex)} 
-                        // >
-                        //     {renderPiece(piece, rowIndex, colIndex)}
-                        //     {validMoves.some(
-                        //         (move) =>
-                        //             move.row === rowIndex &&
-                        //             move.col === colIndex
-                        //     ) && (
-                        //         <div
-                        //             className="valid-move-marker"
-                        //             style={{
-                        //                 gridRow: rowIndex + 1,
-                        //                 gridColumn: colIndex + 1,
-                        //             }}
-                        //         />
-                        //     )}
-                        // </div>
                         renderSquare(rowIndex, colIndex)
                     ))
                 )}
             </div>
-                {isPromoting && (
-                    <div className="promotion-modal">
-                        <h3>Promote your Pawn</h3>
-                        <button onClick={() => handlePromotion(isWhiteTurn ? 'Q' : 'q')}>Queen</button>
-                        <button onClick={() => handlePromotion(isWhiteTurn ? 'R' : 'r')}>Rook</button>
-                        <button onClick={() => handlePromotion(isWhiteTurn ? 'B' : 'b')}>Bishop</button>
-                        <button onClick={() => handlePromotion(isWhiteTurn ? 'N' : 'n')}>Knight</button>
-                    </div>
-                )}
+                {isPromoting && promotedPawnPosition && (
+                <div className="promotion-popup" style={popupStyle || {}}>
+                    {promotionPieces.map((promoPiece) => (
+                        promoPiece = isWhiteTurn ? promoPiece.toUpperCase() : promoPiece.toLowerCase(),
+                        <img
+                            key={promoPiece}
+                            src={pieceImages[promoPiece as keyof typeof pieceImages]}
+                            alt={promoPiece}
+                            className="piece"
+                            onClick={() => handlePromotion(promoPiece)}
+                        />
+                    ))}
+                </div>
+            )}
+            
 
             <div className="move-history">
                 <h3>Move History</h3>
