@@ -2,45 +2,54 @@
 
 import React, { useEffect, useState } from 'react';
 import ChessBoard from '../components/ChessBoard/ChessBoard';
-import { sendMove, onMoveReceived, connectWebSocket, disconnectWebSocket } from '../services/WebSocketService';
+import webSocketService from '../services/WebSocketService';
 
 const ChessGame: React.FC = () => {
-  const [moves, setMoves] = useState<string[]>([]);
+    const [moves, setMoves] = useState<string[]>([]);
 
-  useEffect(() => {
-    // Connect WebSocket when the component mounts
-    connectWebSocket();
+    useEffect(() => {
+        // Activate WebSocket connection
+        webSocketService.activate();
 
-    // Listen for incoming moves
-    onMoveReceived((move) => {
-      setMoves((prevMoves) => [...prevMoves, move]);
-    });
+        // Add a function to handle incoming moves
+        const handleMoveReceived = (message: { body: string }) => {
+            console.log('Move received:', message.body);
+            setMoves((prevMoves) => [...prevMoves, message.body]);
+        };
 
-    // Cleanup WebSocket connection on unmount
-    return () => {
-      disconnectWebSocket();
+        // Subscribe to incoming moves when connected
+        const onConnect = () => {
+            webSocketService.client.subscribe('/topic/moveMade', handleMoveReceived);
+        };
+
+        webSocketService.client.onConnect = onConnect;
+
+        // Cleanup function to unsubscribe and disconnect
+        return () => {
+            webSocketService.client.unsubscribe('/topic/moveMade');
+            webSocketService.disconnect();
+        };
+    }, []);
+
+    const handleMove = (move: string) => {
+        webSocketService.sendMove(move);
+        setMoves((prevMoves) => [...prevMoves, move]);
     };
-  }, []);
 
-  const handleMove = (move: string) => {
-    sendMove(move);
-    setMoves((prevMoves) => [...prevMoves, move]);
-  };
-
-  return (
-    <div>
-      <h1>Chess Game</h1>
-      <ChessBoard  />
-      <div>
-        <h2>Moves History:</h2>
-        <ul>
-          {moves.map((move, index) => (
-            <li key={index}>{move}</li>
-          ))}
-        </ul>
-      </div>
-    </div>
-  );
+    return (
+        <div>
+            <h1>Chess Game</h1>
+            <ChessBoard handleMove={handleMove} />
+            <div>
+                <h2>Moves History:</h2>
+                <ul>
+                    {moves.map((move, index) => (
+                        <li key={index}>{move}</li>
+                    ))}
+                </ul>
+            </div>
+        </div>
+    );
 };
 
 export default ChessGame;

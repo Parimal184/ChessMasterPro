@@ -1,22 +1,50 @@
-import { io } from 'socket.io-client';
+import { Client } from '@stomp/stompjs';
+import SockJS from 'sockjs-client';
 
-const SOCKET_URL = 'http://localhost:8080';
-const socket = io(SOCKET_URL);
+class WebSocketService {
+    public client: Client;
+    private isConnected: boolean = false;
 
-export const connectWebSocket = () => {
-  socket.on('connect', () => {
-    console.log('Connected to WebSocket server');
-  });
-};
+    constructor() {
+        this.client = new Client({
+            webSocketFactory: () => new SockJS('http://localhost:8080/chess'),
+            onConnect: () => {
+                console.log('Connected to WebSocket');
+                this.isConnected = true; // Track connection status
+                // Subscribe to the moveMade topic when connected
+                this.client.subscribe('/topic/moveMade', (message) => {
+                    console.log('Move received:', message.body);
+                    // Notify listeners about the received move
+                });
+            },
+            onStompError: (frame) => {
+                console.error('Broker reported error: ' + frame.headers['message']);
+            },
+        });
+    }
 
-export const sendMove = (move: string) => {
-  socket.emit('move', { move });
-};
+    activate() {
+        if (!this.isConnected) {
+            this.client.activate(); // Activate the connection
+        }
+    }
 
-export const onMoveReceived = (callback: (move: string) => void) => {
-  socket.on('move', callback);
-};
+    sendMove(move: string) {
+        if (this.isConnected) {
+            this.client.publish({
+                destination: '/app/move',
+                body: move,
+            });
+        } else {
+            console.error('Cannot send move, not connected');
+        }
+    }
 
-export const disconnectWebSocket = () => {
-  socket.disconnect();
-};
+    disconnect() {
+        this.client.deactivate();
+        this.isConnected = false; // Update connection status
+    }
+}
+
+const webSocketService = new WebSocketService();
+export default webSocketService;

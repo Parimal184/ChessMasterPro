@@ -1,13 +1,18 @@
 import React, { useState, useEffect } from "react";
 import "../../styles/ChessBoard.scss";
 import { INITIAL_TIMER, initialBoard, pieceImages } from "../../constants/BoardConfig";
+import webSocketService from "../../services/WebSocketService";
 
 // Column and Row labels
 const columnLabels = ["a", "b", "c", "d", "e", "f", "g", "h"];
 const rowLabels = [8, 7, 6, 5, 4, 3, 2, 1];
 const promotionPieces = ["q", "r", "b", "n"];
 
-const ChessBoard: React.FC = () => {
+interface ChessBoardProps {
+    handleMove: (move: string) => void; // Define the handleMove prop
+}
+
+const ChessBoard: React.FC<ChessBoardProps>  = ({ handleMove }) => {
     const [board, setBoard] = useState(initialBoard);
     const [selectedPiece, setSelectedPiece] = useState<{
         row: number;
@@ -16,6 +21,7 @@ const ChessBoard: React.FC = () => {
 
     const [lastMovedFrom, setLastMovedFrom] = useState<{ row: number; col: number } | null>(null);
     const [lastMovedTo, setLastMovedTo] = useState<{ row: number; col: number } | null>(null);
+    const [gameOver, setGameOver] = useState(false);
 
 
     const [moveHistory, setMoveHistory] = useState<string[]>([]); // State to track move history
@@ -35,10 +41,9 @@ const ChessBoard: React.FC = () => {
     const [popupStyle, setPopupStyle] = useState<React.CSSProperties | null>(null);
 
 
-
      // Add drag handlers to pieces
      const handleDragStart = async (row: number, col: number, e: React.DragEvent<HTMLImageElement>, piece: string) => {
-        if (!isPieceColor(piece, isWhiteTurn)) {
+        if (!isPieceColor(piece, isWhiteTurn) || gameOver) {
             e.preventDefault(); // Prevent dragging if it's not the player's turn
             return; // Exit early
         }
@@ -85,18 +90,263 @@ const ChessBoard: React.FC = () => {
         />
       );
     };
-  
-     // Calculate the position for the promotion popup based on the pawn's row and column
-  const getPromotionPopupStyle = () => {
-    if (!promotedPawnPosition) return {};
-    const { row, col } = promotedPawnPosition;
-    const top = row * 100; // Assuming each square is 100px high
-    const left = col * 100; // Assuming each square is 100px wide
-    return {
-      top: `${top}px`,
-      left: `${left}px`,
+
+    const findKingPosition = (board : string[][], isWhiteTurn : boolean) => {
+        const king = isWhiteTurn ? 'K' : 'k';
+        for (let row = 0; row < board.length; row++) {
+            for (let col = 0; col < board[row].length; col++) {
+                if (board[row][col] === king) {
+                    return { row, col };
+                }
+            }
+        }
+        return null;  // Should not happen unless the king is missing from the board.
     };
-  };
+    
+    const isKingInCheck = (board : string[][], kingPosition : { row: number; col: number }, isWhiteTurn : boolean) => {
+        const opponentMoves = getAllOpponentMoves(board, isWhiteTurn);
+        // Check if any opponent move can capture the king
+        return opponentMoves.some((move: { row: number; col: number; }) => move.row === kingPosition.row && move.col === kingPosition.col);
+    };
+    
+    const getAllOpponentMoves = (board : string[][], isWhiteTurn : boolean) => {
+        const opponentPieces = isWhiteTurn ? ['r', 'n', 'b', 'q', 'p'] : ['R', 'N', 'B', 'Q', 'P'];
+        let moves: any = [];
+        
+        for (let row = 0; row < board.length; row++) {
+            for (let col = 0; col < board[row].length; col++) {
+                const piece = board[row][col];
+                if (opponentPieces.includes(piece)) {
+                    const pieceMoves = calculateValidMoves(row, col, board, !isWhiteTurn);
+                    moves = [...moves, ...pieceMoves];
+                }
+            }
+        }
+        
+        return moves;
+    };
+
+    const findAttackingPieces = (board : string[][], kingPosition : { row: number; col: number }, isWhiteTurn : boolean ) => {
+        const opponentMoves = getAllOpponentMoves(board, isWhiteTurn);
+        const attackers = [];
+        
+        for (let row = 0; row < board.length; row++) {
+            for (let col = 0; col < board[row].length; col++) {
+                const piece = board[row][col];
+                const pieceMoves = calculateValidMoves(row, col, board, !isWhiteTurn);
+                
+                if (pieceMoves.some((move: { row: number; col: number; })  => move.row === kingPosition.row && move.col === kingPosition.col)) {
+                    attackers.push({ row, col, piece });
+                }
+            }
+        }
+        
+        return attackers;
+    };
+
+    const getValidMovesForPiece = (row : any, col : any, board : string[][], isWhiteTurn : boolean) => {
+        const validMoves = calculateValidMoves(row, col, board, isWhiteTurn);
+    
+        return validMoves.filter((move : any) => {
+            const newBoard = simulateMove(board, row, col, move.row, move.col);
+            const kingPosition: any = findKingPosition(newBoard, isWhiteTurn);
+            return !isKingInCheck(newBoard, kingPosition, isWhiteTurn);  // Only allow moves that remove the check
+        });
+    };
+
+    const isCheckmate = (board : string[][] , isWhiteTurn : boolean) => {
+        const kingPosition: any = findKingPosition(board, isWhiteTurn);
+        
+        if (!isKingInCheck(board, kingPosition, isWhiteTurn)) return false;  // Not in check, so no checkmate
+    
+        // Check if there are any valid moves for the current player
+        for (let row = 0; row < board.length; row++) {
+            for (let col = 0; col < board[row].length; col++) {
+                const piece = board[row][col];
+                if (isWhiteTurn && piece.match(/[PBNRQK]/) || !isWhiteTurn && piece.match(/[pbnrqk]/)) {
+                    const validMoves = getValidMovesForPiece(row, col, board, isWhiteTurn);
+                    if (validMoves.length > 0) {
+                        return false;  // There's at least one valid move, no checkmate
+                    }
+                }
+            }
+        }
+    
+        return true;  // No valid moves, this is checkmate
+    };
+    
+    const calculateValidMoves = (row : any, col : any, board: string[][], isWhiteTurn: boolean) => {
+        const piece = board[row][col];
+    
+        if (!piece) return [];  // Empty square, no valid moves
+    
+        let validMoves = [];
+    
+        switch (piece.toLowerCase()) {
+            case 'p':  // Pawn
+                validMoves = calculatePawnMoves(row, col, board, isWhiteTurn);
+                break;
+            case 'r':  // Rook
+                validMoves = calculateRookMoves(row, col, board, isWhiteTurn);
+                break;
+            case 'n':  // Knight
+                validMoves = calculateKnightMoves(row, col, board, isWhiteTurn);
+                break;
+            case 'b':  // Bishop
+                validMoves = calculateBishopMoves(row, col, board, isWhiteTurn);
+                break;
+            case 'q':  // Queen
+                validMoves = calculateQueenMoves(row, col, board, isWhiteTurn);
+                break;
+            case 'k':  // King
+                validMoves = calculateKingMoves(row, col, board, isWhiteTurn);
+                break;
+        }
+    
+        return validMoves.filter((move: { row: number; col: number; }) => isWithinBoard(move.row, move.col));  // Ensure moves are within board boundaries
+    };
+    
+    const isWithinBoard = (row : any, col : any) => {
+        return row >= 0 && row < 8 && col >= 0 && col < 8;
+    };
+
+
+    const calculatePawnMoves = (row : any, col : any, board : string[][], isWhiteTurn : boolean) => {
+        const direction = isWhiteTurn ? -1 : 1;
+        const startRow = isWhiteTurn ? 6 : 1;
+        let moves = [];
+    
+        // Forward move
+        if (!board[row + direction][col]) {
+            moves.push({ row: row + direction, col });
+            
+            // Initial double move
+            if (row === startRow && !board[row + 2 * direction][col]) {
+                moves.push({ row: row + 2 * direction, col });
+            }
+        }
+    
+        // Diagonal captures
+        if (col > 0 && isOpponentPiece(row + direction, col - 1, board, isWhiteTurn)) {
+            moves.push({ row: row + direction, col: col - 1 });
+        }
+        if (col < 7 && isOpponentPiece(row + direction, col + 1, board, isWhiteTurn)) {
+            moves.push({ row: row + direction, col: col + 1 });
+        }
+    
+        return moves;
+    };
+    
+    const calculateRookMoves = (row : any, col : any, board : string[][], isWhiteTurn : boolean) => {
+        let moves: any = [];
+    
+        // Vertical and horizontal directions
+        moves = moves.concat(scanDirection(row, col, 1, 0, board, isWhiteTurn));   // Down
+        moves = moves.concat(scanDirection(row, col, -1, 0, board, isWhiteTurn));  // Up
+        moves = moves.concat(scanDirection(row, col, 0, 1, board, isWhiteTurn));   // Right
+        moves = moves.concat(scanDirection(row, col, 0, -1, board, isWhiteTurn));  // Left
+    
+        return moves;
+    };
+
+    const calculateKnightMoves = (row : any, col : any, board : string[][], isWhiteTurn : boolean) => {
+        const knightMoves = [
+            { row: row + 2, col: col + 1 },
+            { row: row + 2, col: col - 1 },
+            { row: row - 2, col: col + 1 },
+            { row: row - 2, col: col - 1 },
+            { row: row + 1, col: col + 2 },
+            { row: row + 1, col: col - 2 },
+            { row: row - 1, col: col + 2 },
+            { row: row - 1, col: col - 2 }
+        ];
+    
+        return knightMoves.filter(move => {
+            return isWithinBoard(move.row, move.col) &&
+                   (!board[move.row][move.col] || isOpponentPiece(move.row, move.col, board, isWhiteTurn));
+        });
+    };
+    
+    const calculateBishopMoves = (row : any, col : any, board : string[][], isWhiteTurn : boolean) => {
+        let moves: any = [];
+    
+        // Diagonal directions
+        moves = moves.concat(scanDirection(row, col, 1, 1, board, isWhiteTurn));   // Down-right
+        moves = moves.concat(scanDirection(row, col, 1, -1, board, isWhiteTurn));  // Down-left
+        moves = moves.concat(scanDirection(row, col, -1, 1, board, isWhiteTurn));  // Up-right
+        moves = moves.concat(scanDirection(row, col, -1, -1, board, isWhiteTurn)); // Up-left
+    
+        return moves;
+    };
+
+    const calculateQueenMoves = (row : any, col : any, board: string[][], isWhiteTurn: boolean) => {
+        let moves: any = [];
+    
+        // Rook-like moves (vertical and horizontal)
+        moves = moves.concat(calculateRookMoves(row, col, board, isWhiteTurn));
+    
+        // Bishop-like moves (diagonal)
+        moves = moves.concat(calculateBishopMoves(row, col, board, isWhiteTurn));
+    
+        return moves;
+    };
+    
+
+    const calculateKingMoves = (row : any, col : any, board : string[][], isWhiteTurn : boolean) => {
+        const kingMoves = [
+            { row: row + 1, col },
+            { row: row - 1, col },
+            { row, col: col + 1 },
+            { row, col: col - 1 },
+            { row: row + 1, col: col + 1 },
+            { row: row + 1, col: col - 1 },
+            { row: row - 1, col: col + 1 },
+            { row: row - 1, col: col - 1 }
+        ];
+    
+        return kingMoves.filter(move => {
+            return isWithinBoard(move.row, move.col) &&
+                   (!board[move.row][move.col] || isOpponentPiece(move.row, move.col, board, isWhiteTurn));
+        });
+    };
+    
+    const scanDirection = (row : any, col : any, rowDir : any, colDir : any, board : string[][], isWhiteTurn : boolean) => {
+        const moves = [];
+        let r = row + rowDir;
+        let c = col + colDir;
+    
+        while (isWithinBoard(r, c)) {
+            if (!board[r][c]) {
+                moves.push({ row: r, col: c });
+            } else if (isOpponentPiece(r, c, board, isWhiteTurn)) {
+                moves.push({ row: r, col: c });
+                break;  // Cannot move beyond opponent piece
+            } else {
+                break;  // Blocked by own piece
+            }
+    
+            r += rowDir;
+            c += colDir;
+        }
+    
+        return moves;
+    };
+    
+    const isOpponentPiece = (row : any, col : any, board : string[][], isWhiteTurn : boolean) => {
+        const piece = board[row][col];
+        return isWhiteTurn ? piece && piece.toLowerCase() === piece : piece && piece.toUpperCase() === piece;
+    };
+    
+    
+    const simulateMove = (board : string[][], fromRow : any, fromCol : any, toRow : any, toCol : any) => {
+        const newBoard = board.map(row => [...row]); // Clone the board
+        newBoard[toRow][toCol] = newBoard[fromRow][fromCol];
+        newBoard[fromRow][fromCol] = '';
+        return newBoard;
+    };
+    
+    
+  
     useEffect(() => {
         const interval = setInterval(() => {
             if (isWhiteTurn) {
@@ -111,13 +361,14 @@ const ChessBoard: React.FC = () => {
 
 
     const handleSquareClick = (row: number, col: number, squareElement: HTMLDivElement) => {
+        if(gameOver) return;
         const piece = board[row][col];
-        debugger
         const rect = squareElement.getBoundingClientRect();
             setPopupStyle({
                 top: `${rect.top - rect.height}px`, // Adjust top to be exactly above the square
                 left: `${rect.left - rect.width}px`, // Align left with the square's left
             });
+        
     
         // If a piece is selected and a valid move is clicked
         if (selectedPiece) {
@@ -127,7 +378,8 @@ const ChessBoard: React.FC = () => {
             } else if (piece && isPieceColor(piece, isWhiteTurn)) {
                 // If the clicked piece is of the same color, switch selection
                 setSelectedPiece({ row, col });
-                setValidMoves(getValidMoves(row, col)); // Get valid moves for the newly selected piece
+                
+                setValidMoves(getValidMovesForPiece(row, col, board, isWhiteTurn)); // Get valid moves for the newly selected piece
             } else {
                 // Deselect if not a valid move and not the same color
                 setSelectedPiece(null);
@@ -137,25 +389,9 @@ const ChessBoard: React.FC = () => {
             // If no piece is selected and clicked piece is valid
             if (piece && isPieceColor(piece, isWhiteTurn)) {
                 setSelectedPiece({ row, col });
-                setValidMoves(getValidMoves(row, col)); // Get valid moves for selected piece
+                setValidMoves(getValidMovesForPiece(row, col, board, isWhiteTurn)); // Get valid moves for selected piece
             }
         }
-    };
-    
-
-    // Get valid moves based on the selected piece
-    const getValidMoves = (row: number, col: number) => {
-        const piece = board[row][col];
-        const moves: { row: number; col: number }[] = [];
-
-        for (let r = 0; r < 8; r++) {
-            for (let c = 0; c < 8; c++) {
-                if (isValidMove(row, col, r, c)) {
-                    moves.push({ row: r, col: c });
-                }
-            }
-        }
-        return moves;
     };
     
     const movePiece = (
@@ -164,12 +400,19 @@ const ChessBoard: React.FC = () => {
         endRow: number,
         endCol: number
     ) => {
-        const newBoard = [...board];
+        let newBoard = [...board];
         const movedPiece = newBoard[startRow][startCol];
+
+        handleMove(movedPiece);
     
-        // Move the piece normally
-        newBoard[endRow][endCol] = movedPiece;
-        newBoard[startRow][startCol] = "";
+        newBoard = simulateMove(board, startRow, startCol, endRow, endCol);
+        const kingPosition: any = findKingPosition(newBoard, isWhiteTurn);
+    
+        if (isKingInCheck(newBoard, kingPosition, isWhiteTurn)) {
+            alert("You cannot leave your king in check!");
+            return;  // Move not allowed
+        }
+
     
         // Check for pawn promotion after moving
         if (movedPiece.toLowerCase() === 'p' && (endRow === 0 || endRow === 7)) {
@@ -189,6 +432,13 @@ const ChessBoard: React.FC = () => {
             setSelectedPiece(null);
             setValidMoves([]); // Clear valid moves
         }
+
+        setTimeout(() => {
+            if (isCheckmate(newBoard, !isWhiteTurn)) {
+                alert(!isWhiteTurn ? "Black wins by checkmate!" : "White wins by checkmate!");
+                setGameOver(true);
+            }
+        }, 200);
     };
     
     const isPieceColor = (piece: string, isWhiteTurn: boolean) => {
@@ -384,7 +634,10 @@ const ChessBoard: React.FC = () => {
         // Determine if the square should be highlighted
         const isHighlightFrom = lastMovedFrom && lastMovedFrom.row === row && lastMovedFrom.col === col;
         const isHighlightTo = lastMovedTo && lastMovedTo.row === row && lastMovedTo.col === col;
-    
+
+        const rankNumber = 8 - row;
+        const columnLabel = String.fromCharCode(97 + col);
+
         return (
             <div
                 className={`square ${isHighlightFrom || isHighlightTo ? 'highlight' : ''}`}
@@ -392,7 +645,13 @@ const ChessBoard: React.FC = () => {
                 onDragOver={handleDragOver}
                 onDrop={() => handleDrop(row, col)}
             >
+                {col === 0 && <div className="num-label" style={{color : row % 2 !== 0 ? '#ebecd0' : '#739552'}}>{rankNumber}</div>}
                 {renderPiece(piece, row, col)}
+                {row === 7 && (
+                    <div className="column-label" style={{color : col % 2 === 0 ? '#ebecd0' : '#739552'}}>
+                        {columnLabel}
+                    </div>
+                )}
                 {validMoves.some(
                                 (move) =>
                                     move.row === row &&
